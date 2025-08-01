@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 
 from ics_sim.Device import HMI
 from Configs import TAG, Controllers
+from ConfigLockManager import config_lock_manager
 from ics_sim.Attacks import _do_scan_scapy_attack, _do_replay_scapy_attack, _do_mitm_scapy_attack, \
     _do_scan_nmap_attack, _do_command_injection_attack, _do_ddos_attack
 
@@ -80,6 +81,17 @@ class HMI2(HMI):
 
         menu = '\n'
         
+        # 설정 락 상태 표시
+        lock_status = config_lock_manager.get_lock_status()
+        if lock_status['locked']:
+            if lock_status['hmi_name'] == 'HMI2':
+                menu += self._make_text("=== CONFIGURATION LOCK: ACQUIRED ===", self.COLOR_GREEN) + '\n'
+            else:
+                menu += self._make_text(f"=== CONFIGURATION LOCKED BY {lock_status['hmi_name']} ===", self.COLOR_RED) + '\n'
+            menu += f"Lock expires at: {lock_status['expires_at']}\n\n"
+        else:
+            menu += self._make_text("=== CONFIGURATION LOCK: AVAILABLE ===", self.COLOR_CYAN) + '\n\n'
+        
         if self.attack_mode:
             menu += self._make_text("=== ATTACK MODE ENABLED ===", self.COLOR_RED) + '\n'
             menu += self.__get_menu_line('A', 'start/stop automatic attacks')
@@ -94,12 +106,23 @@ class HMI2(HMI):
             menu += self.__get_menu_line('S6', 'Command Injection Attack')
             menu += '\n'
 
-        menu += self.__get_menu_line(1, 'empty level of tank')
-        menu += self.__get_menu_line(2, 'full level of tank')
-        menu += self.__get_menu_line(3, 'full level of bottle')
-        menu += self.__get_menu_line(4, 'status of tank Input valve')
-        menu += self.__get_menu_line(5, 'status of tank output valve')
-        menu += self.__get_menu_line(6, 'status of conveyor belt engine')
+        # 설정 변경 메뉴 (락 상태에 따라 표시)
+        if lock_status['locked'] and lock_status['hmi_name'] == 'HMI2':
+            menu += self._make_text("=== CONFIGURATION COMMANDS (UNLOCKED) ===", self.COLOR_GREEN) + '\n'
+            menu += self.__get_menu_line(1, 'empty level of tank')
+            menu += self.__get_menu_line(2, 'full level of tank')
+            menu += self.__get_menu_line(3, 'full level of bottle')
+            menu += self.__get_menu_line(4, 'status of tank Input valve')
+            menu += self.__get_menu_line(5, 'status of tank output valve')
+            menu += self.__get_menu_line(6, 'status of conveyor belt engine')
+            menu += self.__get_menu_line('L', 'release configuration lock')
+        elif not lock_status['locked']:
+            menu += self._make_text("=== CONFIGURATION COMMANDS (LOCKED - ACQUIRE FIRST) ===", self.COLOR_YELLOW) + '\n'
+            menu += self.__get_menu_line('L', 'acquire configuration lock')
+            menu += "1-6) Configuration commands (requires lock)\n"
+        else:
+            menu += self._make_text("=== CONFIGURATION COMMANDS (LOCKED BY OTHER HMI) ===", self.COLOR_RED) + '\n'
+            menu += "1-6) Configuration commands (unavailable)\n"
         
         if self.attack_mode and self.attack_running:
             menu += '\n' + self._make_text("Automatic attacks are running...", self.COLOR_YELLOW) + '\n'
@@ -116,11 +139,13 @@ class HMI2(HMI):
     def _operate(self):
         try:
             if self.attack_mode:
-                choice = input('your choice (1-6, A for auto-attack, R for random attack, S1-S6 for specific attacks): ')
+                choice = input('your choice (1-6, L for lock, A for auto-attack, R for random attack, S1-S6 for specific attacks): ')
             else:
-                choice = input('your choice (1 to 6): ')
+                choice = input('your choice (1-6, L for lock): ')
                 
-            if choice.upper() == 'A' and self.attack_mode:
+            if choice.upper() == 'L':
+                self._handle_lock_command()
+            elif choice.upper() == 'A' and self.attack_mode:
                 self._toggle_auto_attack()
             elif choice.upper() == 'R' and self.attack_mode:
                 self._perform_random_attack()
@@ -136,6 +161,14 @@ class HMI2(HMI):
                 
                 if input1 < 1 or input1 > 6:
                     raise ValueError('just integer values between 1 and 6 are acceptable')
+
+                # 설정 변경 권한 확인
+                lock_status = config_lock_manager.get_lock_status()
+                if not (lock_status['locked'] and lock_status['hmi_name'] == 'HMI2'):
+                    if lock_status['locked']:
+                        raise ValueError(f'Configuration is locked by {lock_status["hmi_name"]}. Cannot modify settings.')
+                    else:
+                        raise ValueError('Configuration lock not acquired. Use "L" to acquire lock first.')
 
                 if input1 <= 3:
                     input2 = float(input('Specify set point (positive real value): '))
@@ -395,6 +428,27 @@ class HMI2(HMI):
                 
         except Exception as e:
             self.report(f"Random cyber attack failed: {e}", logging.ERROR)
+
+    def _handle_lock_command(self):
+        """설정 락 명령 처리"""
+        lock_status = config_lock_manager.get_lock_status()
+        
+        if lock_status['locked'] and lock_status['hmi_name'] == 'HMI2':
+            # 현재 HMI2가 락을 보유한 경우 - 해제
+            if config_lock_manager.release_lock('HMI2'):
+                self.report(self._make_text("Configuration lock released!", self.COLOR_YELLOW))
+            else:
+                self.report(self._make_text("Failed to release configuration lock", self.COLOR_RED))
+        elif not lock_status['locked']:
+            # 락이 없는 경우 - 획득
+            if config_lock_manager.acquire_lock('HMI2'):
+                self.report(self._make_text("Configuration lock acquired!", self.COLOR_GREEN))
+            else:
+                self.report(self._make_text("Failed to acquire configuration lock", self.COLOR_RED))
+        else:
+            # 다른 HMI가 락을 보유한 경우
+            self.report(self._make_text(f"Configuration is locked by {lock_status['hmi_name']}", self.COLOR_RED))
+            self.report(f"Lock expires at: {lock_status['expires_at']}")
 
 
 if __name__ == '__main__':

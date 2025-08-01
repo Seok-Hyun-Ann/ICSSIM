@@ -3,6 +3,7 @@ from datetime import datetime
 
 from ics_sim.Device import HMI
 from Configs import TAG, Controllers
+from ConfigLockManager import config_lock_manager
 
 
 class HMI1(HMI):
@@ -31,13 +32,26 @@ class HMI1(HMI):
                 self._rows[tag_name] = {'tag': tag_name.center(self.title_length, ' '), 'msg1': '', 'msg2': ''}
 
         self._latency = 0
+        self.config_mode = False
 
     def _display(self):
-
-        self.__show_table()
+        if self.config_mode:
+            self.__show_config_menu()
+        else:
+            self.__show_table()
 
     def _operate(self):
-        self.__update_massages()
+        if self.config_mode:
+            self.__handle_config_input()
+        else:
+            self.__update_massages()
+            # 설정 모드 진입 확인
+            try:
+                choice = input("\nPress 'C' for configuration mode or Enter to continue: ").strip().upper()
+                if choice == 'C':
+                    self.__enter_config_mode()
+            except (EOFError, KeyboardInterrupt):
+                pass
 
     def __update_massages(self):
         self._latency = 0
@@ -129,6 +143,124 @@ class HMI1(HMI):
         result += self._border_bot + "\n"
 
         self.report(result)
+
+    def __enter_config_mode(self):
+        """설정 모드 진입"""
+        if config_lock_manager.acquire_lock('HMI1'):
+            self.config_mode = True
+            self.report(self._make_text("Configuration mode activated!", self.COLOR_GREEN))
+        else:
+            lock_status = config_lock_manager.get_lock_status()
+            if lock_status['locked']:
+                self.report(self._make_text(f"Configuration locked by {lock_status['hmi_name']}", self.COLOR_RED))
+            else:
+                self.report(self._make_text("Failed to acquire configuration lock", self.COLOR_RED))
+
+    def __exit_config_mode(self):
+        """설정 모드 종료"""
+        if config_lock_manager.release_lock('HMI1'):
+            self.config_mode = False
+            self.report(self._make_text("Configuration mode deactivated!", self.COLOR_YELLOW))
+        else:
+            self.report(self._make_text("Failed to release configuration lock", self.COLOR_RED))
+
+    def __show_config_menu(self):
+        """설정 메뉴 표시"""
+        lock_status = config_lock_manager.get_lock_status()
+        
+        menu = "\n" + self._make_text("=== CONFIGURATION MODE ===", self.COLOR_GREEN) + "\n\n"
+        
+        if lock_status['locked'] and lock_status['hmi_name'] == 'HMI1':
+            menu += self._make_text("Configuration Lock: ACQUIRED", self.COLOR_GREEN) + "\n"
+            menu += f"Lock expires at: {lock_status['expires_at']}\n\n"
+            
+            menu += self._make_text("Sensor/Actuator Configuration:", self.COLOR_CYAN) + "\n"
+            menu += "1) Set Tank Level Min\n"
+            menu += "2) Set Tank Level Max\n"
+            menu += "3) Set Bottle Level Max\n"
+            menu += "4) Set Tank Input Valve Mode\n"
+            menu += "5) Set Tank Output Valve Mode\n"
+            menu += "6) Set Conveyor Belt Engine Mode\n\n"
+            menu += "E) Exit Configuration Mode\n"
+            menu += "R) Refresh Lock\n"
+        else:
+            menu += self._make_text("Configuration Lock: NOT AVAILABLE", self.COLOR_RED) + "\n"
+            if lock_status['locked']:
+                menu += f"Locked by: {lock_status['hmi_name']}\n"
+                menu += f"Lock expires at: {lock_status['expires_at']}\n"
+            menu += "\nE) Exit Configuration Mode\n"
+            menu += "T) Try to acquire lock\n"
+        
+        self.report(menu)
+
+    def __handle_config_input(self):
+        """설정 입력 처리"""
+        try:
+            choice = input('Your choice: ').strip().upper()
+            
+            if choice == 'E':
+                self.__exit_config_mode()
+            elif choice == 'T':
+                self.__enter_config_mode()
+            elif choice == 'R':
+                if config_lock_manager.acquire_lock('HMI1'):
+                    self.report(self._make_text("Lock refreshed!", self.COLOR_GREEN))
+                else:
+                    self.report(self._make_text("Failed to refresh lock", self.COLOR_RED))
+            elif choice in ['1', '2', '3', '4', '5', '6']:
+                self.__execute_config_command(int(choice))
+            else:
+                self.report("Invalid choice!")
+                
+        except (ValueError, EOFError, KeyboardInterrupt):
+            self.report("Invalid input!")
+        
+        input('Press enter to continue...')
+
+    def __execute_config_command(self, choice):
+        """설정 명령 실행"""
+        lock_status = config_lock_manager.get_lock_status()
+        if not (lock_status['locked'] and lock_status['hmi_name'] == 'HMI1'):
+            self.report(self._make_text("Configuration lock not held by HMI1!", self.COLOR_RED))
+            return
+        
+        try:
+            if choice <= 3:
+                # 수치 설정값
+                value = float(input('Enter new value (positive real number): '))
+                if value < 0:
+                    raise ValueError('Negative numbers are not acceptable.')
+                
+                if choice == 1:
+                    self._send(TAG.TAG_TANK_LEVEL_MIN, value)
+                    self.report(self._make_text(f"Tank Level Min set to {value}", self.COLOR_GREEN))
+                elif choice == 2:
+                    self._send(TAG.TAG_TANK_LEVEL_MAX, value)
+                    self.report(self._make_text(f"Tank Level Max set to {value}", self.COLOR_GREEN))
+                elif choice == 3:
+                    self._send(TAG.TAG_BOTTLE_LEVEL_MAX, value)
+                    self.report(self._make_text(f"Bottle Level Max set to {value}", self.COLOR_GREEN))
+            else:
+                # 모드 설정
+                self.report("\n1) Manually Off\n2) Manually On\n3) Auto Operation")
+                mode = int(input('Select mode (1-3): '))
+                if mode < 1 or mode > 3:
+                    raise ValueError('Only 1, 2, and 3 are acceptable')
+                
+                if choice == 4:
+                    self._send(TAG.TAG_TANK_INPUT_VALVE_MODE, mode)
+                    self.report(self._make_text(f"Tank Input Valve Mode set to {mode}", self.COLOR_GREEN))
+                elif choice == 5:
+                    self._send(TAG.TAG_TANK_OUTPUT_VALVE_MODE, mode)
+                    self.report(self._make_text(f"Tank Output Valve Mode set to {mode}", self.COLOR_GREEN))
+                elif choice == 6:
+                    self._send(TAG.TAG_CONVEYOR_BELT_ENGINE_MODE, mode)
+                    self.report(self._make_text(f"Conveyor Belt Engine Mode set to {mode}", self.COLOR_GREEN))
+                    
+        except ValueError as e:
+            self.report(self._make_text(f"Invalid input: {e}", self.COLOR_RED))
+        except Exception as e:
+            self.report(self._make_text(f"Error executing command: {e}", self.COLOR_RED))
 
 
 if __name__ == '__main__':
