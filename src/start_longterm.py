@@ -35,6 +35,8 @@ class LongTermSimulationManager:
         print(f"📅 시작 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print("⏰ 예상 실행 시간: 1-3일")
         print("📡 네트워크 덤프를 위한 현실적인 트래픽 생성")
+        print("🔄 운영 스케줄: 주간 11시간, 야간 11시간, 교대시 1시간 중지")
+        print("📊 센서값: 기존 물리 시뮬레이션 로직 그대로 유지")
         print("="*60)
         
         # Signal handler 등록
@@ -82,7 +84,13 @@ class LongTermSimulationManager:
             print("  - PLC1: 탱크 밸브 제어 로직")
             print("  - PLC2: 컨베이어 벨트 제어 로직")  
             print("  - HMI1: 실시간 모니터링")
-            print("  - LongTermScenario: 현실적인 운영 시나리오")
+            print("  - LongTermScenario: 교대 기반 운영 시나리오")
+            
+            print(f"\n⏰ 운영 스케줄:")
+            print("  - 주간 근무: 07:00-18:00 (11시간) - 장비 AUTO 모드")
+            print("  - 교대 시간: 18:00-19:00 (1시간) - 장비 중지")
+            print("  - 야간 근무: 19:00-06:00 (11시간) - 장비 AUTO 모드")
+            print("  - 교대 시간: 06:00-07:00 (1시간) - 장비 중지")
             
             print(f"\n🌐 네트워크 포트:")
             print("  - PLC1: 127.0.0.1:5502 (Modbus TCP)")

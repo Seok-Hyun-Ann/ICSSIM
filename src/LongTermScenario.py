@@ -8,8 +8,9 @@ from Configs import TAG, Controllers
 class LongTermScenario(HMI):
     """
     1-3일간 지속 가능한 현실적인 공장 운영 시나리오
-    - 모드 변경을 최소화하고 센서 기반 자동 동작 위주
-    - 실제 공장의 운영 패턴을 모방
+    - 주간 11시간, 야간 11시간, 교대시 1시간씩 중지
+    - 센서값은 기존 물리 시뮬레이션 그대로 유지
+    - 비상상황 및 유지보수 기능 제거
     """
     
     def __init__(self):
@@ -17,19 +18,18 @@ class LongTermScenario(HMI):
         
         # 시나리오 상태
         self.scenario_start_time = None
-        self.current_shift = "day"  # day, night, maintenance
+        self.current_shift = "day"  # day, night, shift_change
         self.last_shift_change = None
-        self.last_maintenance = None
-        self.last_parameter_adjustment = None
         
-        # 운영 모드 (한번 설정하면 오랫동안 유지)
-        self.operation_mode = "normal"  # normal, maintenance, emergency
+        # 운영 모드 (간소화)
+        self.operation_mode = "normal"  # normal, shift_change
         
-        # 실제 공장과 같은 운영 스케줄
+        # 새로운 운영 스케줄: 주간 11시간, 야간 11시간, 교대 1시간씩
         self.shift_schedule = {
-            "day_shift": {"start": 6, "end": 18},      # 06:00 - 18:00
-            "night_shift": {"start": 18, "end": 6},   # 18:00 - 06:00
-            "maintenance": {"start": 2, "end": 4}     # 02:00 - 04:00 (주간 유지보수)
+            "day_shift": {"start": 7, "end": 18},        # 07:00 - 18:00 (11시간)
+            "shift_change_1": {"start": 18, "end": 19},  # 18:00 - 19:00 (1시간 중지)
+            "night_shift": {"start": 19, "end": 6},      # 19:00 - 06:00 (11시간)
+            "shift_change_2": {"start": 6, "end": 7}     # 06:00 - 07:00 (1시간 중지)
         }
         
     def _before_start(self):
@@ -37,14 +37,13 @@ class LongTermScenario(HMI):
         self._set_clear_scr(True)
         self.scenario_start_time = datetime.now()
         self.last_shift_change = datetime.now()
-        self.last_maintenance = datetime.now()
-        self.last_parameter_adjustment = datetime.now()
         
         # 초기 설정: 모든 장치를 AUTO 모드로 설정 (한번만!)
         self._initialize_factory()
         
         self.report("🏭 장기 공장 시뮬레이션을 시작합니다.", logging.INFO)
         self.report("📅 시뮬레이션 시작 시간: " + self.scenario_start_time.strftime("%Y-%m-%d %H:%M:%S"), logging.INFO)
+        self.report("⏰ 운영 스케줄: 주간 11시간, 야간 11시간, 교대시 1시간 중지", logging.INFO)
         
     def _initialize_factory(self):
         """공장 초기화 - 모든 장치를 자동 모드로 설정"""
@@ -52,10 +51,8 @@ class LongTermScenario(HMI):
         self._send(TAG.TAG_TANK_OUTPUT_VALVE_MODE, 3)     # AUTO  
         self._send(TAG.TAG_CONVEYOR_BELT_ENGINE_MODE, 3)  # AUTO
         
-        # 초기 설정값 (현실적인 값들)
-        self._send(TAG.TAG_TANK_LEVEL_MIN, 3.0)
-        self._send(TAG.TAG_TANK_LEVEL_MAX, 7.0)
-        self._send(TAG.TAG_BOTTLE_LEVEL_MAX, 1.8)
+        # 초기 설정값 (기본값 유지, 변경하지 않음)
+        # 센서값은 기존 물리 시뮬레이션에서 자동으로 처리됨
         
         self.operation_mode = "normal"
         self.report("✅ 모든 장치가 자동 모드로 설정되었습니다.", logging.INFO)
@@ -106,162 +103,93 @@ class LongTermScenario(HMI):
         self.report(status)
         
     def _operate(self):
-        """장기 운영 로직 - 현실적인 공장 운영 패턴"""
+        """장기 운영 로직 - 간소화된 교대 시스템"""
         now = datetime.now()
         
-        # 1. 교대 시간 체크 및 변경 (하루 2번)
+        # 1. 교대 시간 체크 및 변경 (하루 4번: 주간시작, 교대중지1, 야간시작, 교대중지2)
         self._check_shift_change(now)
         
-        # 2. 주간 유지보수 체크 (일주일에 1번)
-        self._check_maintenance_schedule(now)
-        
-        # 3. 매개변수 조정 (하루에 1-2번, 필요시에만)
-        self._check_parameter_adjustment(now)
-        
-        # 4. 비상 상황 시뮬레이션 (매우 드물게, 월 1회 정도)
-        self._check_emergency_simulation(now)
-        
-        # 5. 상태 로깅 (정기적으로)
+        # 2. 상태 로깅 (정기적으로)
         self._periodic_logging(now)
         
     def _check_shift_change(self, now):
-        """교대 시간 체크 - 하루 2번만 변경"""
+        """교대 시간 체크 - 새로운 스케줄: 주간11h, 야간11h, 교대1h씩"""
         current_hour = now.hour
         time_since_last_change = now - self.last_shift_change
         
-        # 최소 4시간 간격으로만 교대 변경 체크
-        if time_since_last_change < timedelta(hours=4):
+        # 최소 30분 간격으로만 교대 변경 체크 (더 정확한 시간 체크)
+        if time_since_last_change < timedelta(minutes=30):
             return
             
         new_shift = None
+        new_operation_mode = "normal"
         
-        if 6 <= current_hour < 18 and self.current_shift != "day":
+        # 새로운 스케줄에 따른 교대 체크
+        if 7 <= current_hour < 18 and self.current_shift != "day":
             new_shift = "day"
-        elif (current_hour >= 18 or current_hour < 6) and self.current_shift != "night":
-            new_shift = "night"
+            new_operation_mode = "normal"
+        elif current_hour == 18 and self.current_shift != "shift_change":
+            new_shift = "shift_change"
+            new_operation_mode = "shift_change"
+        elif 19 <= current_hour < 24 or 0 <= current_hour < 6:
+            if self.current_shift != "night":
+                new_shift = "night"
+                new_operation_mode = "normal"
+        elif current_hour == 6 and self.current_shift != "shift_change":
+            new_shift = "shift_change"
+            new_operation_mode = "shift_change"
             
         if new_shift and new_shift != self.current_shift:
             self.current_shift = new_shift
+            self.operation_mode = new_operation_mode
             self.last_shift_change = now
-            self.report(f"🔄 교대 변경: {new_shift.upper()} 근무 시작", logging.INFO)
             
-            # 교대 시에만 매우 드물게 설정 조정
             if new_shift == "day":
-                # 주간: 생산량 증가를 위한 약간의 조정
-                self._send(TAG.TAG_TANK_LEVEL_MAX, 7.2)
+                self._start_day_shift()
             elif new_shift == "night":
-                # 야간: 안정적 운영을 위한 보수적 설정
-                self._send(TAG.TAG_TANK_LEVEL_MAX, 6.8)
+                self._start_night_shift()
+            elif new_shift == "shift_change":
+                self._start_shift_change()
                 
-    def _check_maintenance_schedule(self, now):
-        """주간 유지보수 스케줄 체크"""
-        time_since_maintenance = now - self.last_maintenance
-        current_hour = now.hour
+    def _start_day_shift(self):
+        """주간 근무 시작 (07:00-18:00, 11시간)"""
+        self.report("🌅 주간 근무를 시작합니다. (07:00-18:00)", logging.INFO)
         
-        # 일주일에 한번, 새벽 2-4시에 유지보수
-        if (time_since_maintenance > timedelta(days=7) and 
-            2 <= current_hour <= 4 and 
-            self.operation_mode != "maintenance"):
-            
-            self._start_maintenance_mode()
-            
-        # 유지보수 모드 종료 체크
-        elif (self.operation_mode == "maintenance" and 
-              time_since_maintenance > timedelta(hours=2)):
-            
-            self._end_maintenance_mode()
-            
-    def _start_maintenance_mode(self):
-        """유지보수 모드 시작"""
-        self.operation_mode = "maintenance"
-        self.last_maintenance = datetime.now()
-        
-        self.report("🔧 주간 유지보수를 시작합니다.", logging.INFO)
-        
-        # 유지보수 중에는 모든 장치를 수동 OFF (안전을 위해)
-        self._send(TAG.TAG_TANK_INPUT_VALVE_MODE, 1)   # Manual OFF
-        self._send(TAG.TAG_TANK_OUTPUT_VALVE_MODE, 1)  # Manual OFF
-        self._send(TAG.TAG_CONVEYOR_BELT_ENGINE_MODE, 1)  # Manual OFF
-        
-        self.report("⚠️ 유지보수를 위해 모든 장치가 정지되었습니다.", logging.INFO)
-        
-    def _end_maintenance_mode(self):
-        """유지보수 모드 종료"""
-        self.operation_mode = "normal"
-        
-        self.report("✅ 주간 유지보수가 완료되었습니다.", logging.INFO)
-        
-        # 유지보수 후 모든 장치를 다시 AUTO 모드로
-        self._send(TAG.TAG_TANK_INPUT_VALVE_MODE, 3)   # AUTO
-        self._send(TAG.TAG_TANK_OUTPUT_VALVE_MODE, 3)  # AUTO
+        # 모든 장치를 AUTO 모드로 (정상 운영)
+        self._send(TAG.TAG_TANK_INPUT_VALVE_MODE, 3)      # AUTO
+        self._send(TAG.TAG_TANK_OUTPUT_VALVE_MODE, 3)     # AUTO
         self._send(TAG.TAG_CONVEYOR_BELT_ENGINE_MODE, 3)  # AUTO
         
-        # 유지보수 후 설정값 최적화
-        self._send(TAG.TAG_TANK_LEVEL_MIN, 3.2)
-        self._send(TAG.TAG_TANK_LEVEL_MAX, 7.0)
+        self.report("✅ 모든 장치가 자동 모드로 설정되었습니다.", logging.INFO)
         
-        self.report("🔄 모든 장치가 정상 운영으로 복귀했습니다.", logging.INFO)
+    def _start_night_shift(self):
+        """야간 근무 시작 (19:00-06:00, 11시간)"""
+        self.report("🌙 야간 근무를 시작합니다. (19:00-06:00)", logging.INFO)
         
-    def _check_parameter_adjustment(self, now):
-        """매개변수 조정 - 하루에 1-2번만"""
-        time_since_adjustment = now - self.last_parameter_adjustment
-        
-        # 최소 12시간 간격으로만 조정
-        if time_since_adjustment < timedelta(hours=12):
-            return
-            
-        # 현실적인 소폭 조정만 수행
-        if self.operation_mode == "normal":
-            try:
-                current_tank_level = self._receive(TAG.TAG_TANK_LEVEL_VALUE)
-                
-                # 탱크 수위에 따른 미세 조정
-                if current_tank_level > 8.0:
-                    # 수위가 높으면 최대값을 약간 낮춤
-                    self._send(TAG.TAG_TANK_LEVEL_MAX, 6.5)
-                    self.report("📊 탱크 수위가 높아 최대값을 6.5로 조정", logging.INFO)
-                elif current_tank_level < 2.0:
-                    # 수위가 낮으면 최소값을 약간 낮춤
-                    self._send(TAG.TAG_TANK_LEVEL_MIN, 2.5)
-                    self.report("📊 탱크 수위가 낮아 최소값을 2.5로 조정", logging.INFO)
-                    
-                self.last_parameter_adjustment = now
-                
-            except:
-                pass  # 센서 오류시 조정하지 않음
-                
-    def _check_emergency_simulation(self, now):
-        """비상 상황 시뮬레이션 - 매우 드물게"""
-        # 30일에 한번 정도만 비상 상황 발생
-        if (now - self.scenario_start_time).days > 0 and (now - self.scenario_start_time).days % 30 == 0:
-            current_hour = now.hour
-            
-            # 특정 시간대에만 비상 상황 시뮬레이션
-            if current_hour == 14 and self.operation_mode != "emergency":
-                self._simulate_emergency()
-                
-    def _simulate_emergency(self):
-        """비상 상황 시뮬레이션"""
-        self.operation_mode = "emergency"
-        
-        self.report("🚨 비상 상황 시뮬레이션을 시작합니다!", logging.WARNING)
-        
-        # 모든 장치 즉시 정지
-        self._send(TAG.TAG_TANK_INPUT_VALVE_MODE, 1)   # Manual OFF
-        self._send(TAG.TAG_TANK_OUTPUT_VALVE_MODE, 1)  # Manual OFF
-        self._send(TAG.TAG_CONVEYOR_BELT_ENGINE_MODE, 1)  # Manual OFF
-        
-        self.report("⚠️ 모든 장치가 비상 정지되었습니다.", logging.WARNING)
-        
-        # 10분 후 정상 복귀 (실제로는 더 짧게)
-        time.sleep(10)  # 10초 대기 (시뮬레이션에서는)
-        
-        self.operation_mode = "normal"
-        self._send(TAG.TAG_TANK_INPUT_VALVE_MODE, 3)   # AUTO
-        self._send(TAG.TAG_TANK_OUTPUT_VALVE_MODE, 3)  # AUTO
+        # 모든 장치를 AUTO 모드로 (정상 운영)
+        self._send(TAG.TAG_TANK_INPUT_VALVE_MODE, 3)      # AUTO
+        self._send(TAG.TAG_TANK_OUTPUT_VALVE_MODE, 3)     # AUTO
         self._send(TAG.TAG_CONVEYOR_BELT_ENGINE_MODE, 3)  # AUTO
         
-        self.report("✅ 비상 상황이 해제되고 정상 운영으로 복귀했습니다.", logging.INFO)
+        self.report("✅ 모든 장치가 자동 모드로 설정되었습니다.", logging.INFO)
+        
+    def _start_shift_change(self):
+        """교대 시간 (장비 가동 중지, 1시간)"""
+        if self.current_shift == "shift_change":
+            current_hour = datetime.now().hour
+            if current_hour == 18:
+                self.report("🔄 주간→야간 교대 시간입니다. (18:00-19:00)", logging.INFO)
+            elif current_hour == 6:
+                self.report("🔄 야간→주간 교대 시간입니다. (06:00-07:00)", logging.INFO)
+                
+        # 교대 시간에는 모든 장치를 수동 OFF (안전한 중지)
+        self._send(TAG.TAG_TANK_INPUT_VALVE_MODE, 1)      # Manual OFF
+        self._send(TAG.TAG_TANK_OUTPUT_VALVE_MODE, 1)     # Manual OFF
+        self._send(TAG.TAG_CONVEYOR_BELT_ENGINE_MODE, 1)  # Manual OFF
+        
+        self.report("⏸️ 교대 시간으로 모든 장치가 안전하게 정지되었습니다.", logging.INFO)
+                
+
         
     def _periodic_logging(self, now):
         """정기적인 상태 로깅"""
@@ -279,9 +207,9 @@ class LongTermScenario(HMI):
     def _get_current_shift_name(self):
         """현재 교대 이름 반환"""
         shift_names = {
-            "day": "주간 근무 (06:00-18:00)",
-            "night": "야간 근무 (18:00-06:00)",
-            "maintenance": "유지보수 시간"
+            "day": "주간 근무 (07:00-18:00)",
+            "night": "야간 근무 (19:00-06:00)", 
+            "shift_change": "교대 시간 (장비 중지)"
         }
         return shift_names.get(self.current_shift, "알 수 없음")
         
@@ -307,22 +235,31 @@ class LongTermScenario(HMI):
         """다음 예정 이벤트들"""
         now = datetime.now()
         events = []
+        current_hour = now.hour
         
-        # 다음 교대 시간
+        # 다음 이벤트 예측
         if self.current_shift == "day":
-            next_shift = now.replace(hour=18, minute=0, second=0)
-            if next_shift <= now:
-                next_shift += timedelta(days=1)
-            events.append(f"⏰ 야간 교대: {next_shift.strftime('%H:%M')}")
-        else:
-            next_shift = (now + timedelta(days=1)).replace(hour=6, minute=0, second=0)
-            events.append(f"⏰ 주간 교대: {next_shift.strftime('%H:%M')}")
+            # 주간 근무 중: 다음은 18시 교대 시간
+            next_event_time = now.replace(hour=18, minute=0, second=0)
+            if next_event_time <= now:
+                next_event_time += timedelta(days=1)
+            events.append(f"⏰ 교대 시간 (장비 중지): {next_event_time.strftime('%H:%M')}")
             
-        # 다음 유지보수
-        next_maintenance = self.last_maintenance + timedelta(days=7)
-        maintenance_days = (next_maintenance - now).days
-        if maintenance_days >= 0:
-            events.append(f"🔧 다음 유지보수: {maintenance_days}일 후")
+        elif self.current_shift == "shift_change":
+            # 교대 시간 중: 다음 근무 시간 예측
+            if current_hour == 18:
+                next_event_time = now.replace(hour=19, minute=0, second=0)
+                events.append(f"🌙 야간 근무 시작: {next_event_time.strftime('%H:%M')}")
+            elif current_hour == 6:
+                next_event_time = now.replace(hour=7, minute=0, second=0)
+                events.append(f"🌅 주간 근무 시작: {next_event_time.strftime('%H:%M')}")
+                
+        elif self.current_shift == "night":
+            # 야간 근무 중: 다음은 06시 교대 시간
+            next_event_time = (now + timedelta(days=1)).replace(hour=6, minute=0, second=0)
+            if current_hour < 6:  # 아직 당일 새벽이면
+                next_event_time = now.replace(hour=6, minute=0, second=0)
+            events.append(f"⏰ 교대 시간 (장비 중지): {next_event_time.strftime('%H:%M')}")
             
         return "\n".join(events) + "\n" if events else "예정된 이벤트 없음\n"
 
