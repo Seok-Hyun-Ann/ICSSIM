@@ -100,3 +100,41 @@ Run the sample project using the running start.py
 cd ICSSIM/src
 python3 start.py
 ```
+
+# PCAP to CSV (Packets + Modbus Conversations)
+
+This tool parses a `.pcap` or `.pcapng` file and exports:
+
+- `packets.csv`: per-packet features across Ethernet/IP/TCP/UDP/DNS/mDNS/Modbus-TCP where available
+- `modbus_conversations.csv`: Modbus/TCP request/response pairs with timing & values
+- `analysis.md`: brief high-level analysis of overall network behavior
+
+## Install (Windows PowerShell)
+
+```powershell
+python -m venv .venv
+. .venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+Wireshark/Tshark dependency: PyShark requires `tshark` in PATH. Install Wireshark and ensure "Install TShark" is checked. Verify:
+
+```powershell
+tshark -v
+```
+
+## Usage
+
+```powershell
+python pcap_to_csv.py --pcap C:\path\to\capture.pcap --out C:\path\to\output_dir
+```
+
+Optional filters:
+
+```powershell
+python pcap_to_csv.py --pcap input.pcap --only-modbus
+```
+
+## Notes
+- Large pcaps can take time; the script streams packets to limit memory.
+- CSVs use UTF-8 with BOM for Excel compatibility on Windows.
