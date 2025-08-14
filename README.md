@@ -100,3 +100,146 @@ Run the sample project using the running start.py
 cd ICSSIM/src
 python3 start.py
 ```
+
+# PCAP Analyzer for Modbus/TCP, TCP, and MDNS Protocols
+
+이 도구는 .pcap 파일을 분석하여 네트워크 패킷 정보를 CSV 파일로 추출하고, Modbus/TCP 프로토콜의 쿼리-응답 분석을 수행합니다.
+
+## 주요 기능
+
+1. **개별 패킷 분석**: 모든 네트워크 패킷의 상세 정보를 CSV로 저장
+2. **Modbus/TCP 트랜잭션 분석**: 쿼리-응답 쌍을 매칭하여 응답 시간 분석
+3. **네트워크 행위 분석**: 전체적인 네트워크 통신 패턴 분석 리포트
+
+## 필요 사항
+
+- Python 3.6 이상
+- Windows 환경 (개발 목적)
+
+## 설치 방법
+
+1. 필요한 패키지 설치:
+```bash
+pip install -r requirements.txt
+```
+
+또는 개별 설치:
+```bash
+pip install scapy
+```
+
+## 사용 방법
+
+### 기본 사용법
+```bash
+python pcap_analyzer.py your_file.pcap
+```
+
+### 출력 디렉토리 지정
+```bash
+python pcap_analyzer.py your_file.pcap -o custom_output_folder
+```
+
+### 도움말
+```bash
+python pcap_analyzer.py -h
+```
+
+## 출력 파일
+
+분석 완료 후 다음 파일들이 생성됩니다:
+
+### 1. network_packets.csv
+모든 패킷의 개별 정보:
+- 패킷 번호, 타임스탬프, 프로토콜
+- 소스/목적지 IP 및 포트
+- MAC 주소
+- TCP 플래그, 시퀀스 번호, ACK 번호
+- 페이로드 크기 및 16진수 데이터
+- Modbus/TCP 패킷 여부 및 상세 정보
+
+### 2. modbus_transactions.csv
+Modbus/TCP 쿼리-응답 분석:
+- 트랜잭션 ID
+- 쿼리/응답 패킷 번호
+- 응답 시간 (밀리초)
+- 클라이언트/서버 IP
+- 함수 코드 및 이름
+- 유닛 ID
+- 시작 주소 및 레지스터 개수
+- 쿼리/응답 데이터
+
+### 3. network_analysis.json
+네트워크 분석 결과 (JSON 형식):
+- 전체 통계 (패킷 수, 크기, 지속 시간)
+- 프로토콜 분포
+- 상위 IP 연결
+- 상위 포트 사용량
+
+### 4. network_analysis_report.txt
+사람이 읽기 쉬운 분석 리포트:
+- 요약 정보
+- 프로토콜 분포 (백분율 포함)
+- 주요 IP 연결
+- 주요 포트 사용량
+
+## 지원 프로토콜
+
+- **TCP**: 일반 TCP 패킷 분석
+- **Modbus/TCP**: 포트 502를 사용하는 Modbus 프로토콜 분석
+  - 함수 코드 1, 2, 3, 4, 5, 6, 15, 16 지원
+  - 트랜잭션 ID를 통한 쿼리-응답 매칭
+  - 응답 시간 계산
+- **MDNS**: 포트 5353을 사용하는 멀티캐스트 DNS 패킷 식별
+- **UDP**: 일반 UDP 패킷 분석
+
+## Modbus/TCP 함수 코드
+
+지원되는 Modbus 함수 코드:
+- 1: Read Coils
+- 2: Read Discrete Inputs
+- 3: Read Holding Registers
+- 4: Read Input Registers
+- 5: Write Single Coil
+- 6: Write Single Register
+- 15: Write Multiple Coils
+- 16: Write Multiple Registers
+
+## 예제
+
+```bash
+# 기본 분석
+python pcap_analyzer.py network_capture.pcap
+
+# 커스텀 출력 폴더 사용
+python pcap_analyzer.py network_capture.pcap -o analysis_results
+
+# 결과 확인
+ls output/
+# network_packets.csv
+# modbus_transactions.csv
+# network_analysis.json
+# network_analysis_report.txt
+```
+
+## 주의 사항
+
+1. 큰 PCAP 파일의 경우 분석에 시간이 걸릴 수 있습니다.
+2. Modbus/TCP 분석은 포트 502를 사용하는 패킷만 대상으로 합니다.
+3. 암호화된 패킷은 페이로드 분석이 제한됩니다.
+4. Windows 환경에서 Scapy 사용 시 관리자 권한이 필요할 수 있습니다.
+
+## 문제 해결
+
+### Scapy 설치 문제
+```bash
+# Windows에서 Scapy 설치 시 문제가 있는 경우
+pip install --user scapy
+```
+
+### 권한 문제
+- Windows에서는 관리자 권한으로 명령 프롬프트를 실행해야 할 수 있습니다.
+
+## 라이선스
+
+이 프로젝트는 MIT 라이선스 하에 배포됩니다.
