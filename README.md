@@ -1,102 +1,94 @@
+# PCAP to CSV Converter
 
-# ICSSIM
-This is the ICSSIM source code and user manual for simulating industrial control system testbed for cybersecurity experiments.
+This project provides a simple Python utility to convert a `.pcap` capture file into two CSV files—one with **per-packet details** and another with **Modbus/TCP query-response analysis**—plus a text file summarising overall network statistics.
 
-The ICSSIM framework enables cyber threats and attacks to be investigated and mitigated by building a virtual ICS security testbed customized to suit their needs. As ICSSIM runs on separate private operating system kernels, it provides realistic network emulation and runs ICS components on Docker container technology. 
+---
 
-ICSSIM can also be used to simulate any other open-loop controlling process, such as bottle filling, and allows us to build a testbed for any open-loop controlling process.
+## Features
 
-# Sample Bottle Filling Factory
-A water tank repository is used to fill bottles during the bottle-filling factory control process. The below figure shows the overall scenario including process and hardware. The proposed control process consists of two main hardware zones, each managed by a standalone PLC, called PLC-1 and PLC-2. The water tank and valves are controlled by PLC-1. The conveyor belts are controlled by PLC-2 to switch out filled bottles with empty ones.
+1. **`packets.csv`** – Each packet in the capture, including timestamp, IP/port information, protocol, length, and a preview of the payload (first 25 bytes in hex).
+2. **`modbus_analysis.csv`** – Pairs Modbus/TCP requests with their corresponding responses using the Transaction ID, showing round-trip time (RTT) and other key fields.
+3. **`summary.txt`** – High-level statistics such as packet counts per protocol and average Modbus RTT.
 
-![The Sample bottle filling factory](Images/physical_process.png)
-An overview of the bottle filling factory network architecture is presented below. In the proposed network architecture, the first three layers of the Purdue reference architecture are realized. In Docker container technology, shared memory is used to implement the hard wired connection between Tiers 1 and 2. To simulate the network between Tiers 2 and 3, a Local Area Network (LAN) is created in a simulation environment. The attacker is also assumed to have access to this network as a malicious HMI, therefore we consider this node as an additional attacker in this architecture.
+---
 
+## Installation
 
-![Network architecture for the sample bottle filling plant](Images/sample_architecture.png)
+1. Install **Wireshark** (or the standalone *TShark*) and make sure `tshark` is in your system `PATH`.
+2. Install Python dependencies:
 
-# Run a Sample Bottle Filling Factory
-
-## Run in Docker container Environement
-
-### Pre steps
-Make sure that you have already installed the following applications and tools. 
-
-* git
-* Docker
-* Docker-Compose
-
-### Getting ICSSIM and the sample project
-Clone The probject into your local directory using following git command.
-```
-git clone https://github.com/AlirezaDehlaghi/ICSSIM ICSSIM
+```powershell
+pip install pyshark
 ```
 
-check the file [Configs.py](src/Configs.py) and make sure that EXECUTION_MODE varibale is set to EXECUTION_MODE_DOCKER as follow:
-```
-EXECUTION_MODE = EXECUTION_MODE_DOCKER
+> ⚠️ `pyshark` is a thin wrapper around *TShark*, so Wireshark/TShark **must** be installed first.
+
+---
+
+## Usage
+
+```powershell
+python pcap_to_csv.py <input_file>.pcap [-o <output_dir>]
 ```
 
-### Running the sample project 
-Run the sample project using the prepared script 
-[init.sh](deployments/init.sh)
-```
-cd ICSSIM/deployments
-./init.sh
-```
-### Check successful running
-If *init.sh* commands runs to the end, it will show the status of all containers. In the case that all containers are 'Up', then project is running successfully.
-You could also see the status of containers with following command:
-```
-sudo docker-compose ps
+*Example:*
+
+```powershell
+python pcap_to_csv.py capture.pcap -o results
 ```
 
-### Operating the control system and apply cyberattacks
-In the directory [deployments](deployments/) there exist some scripts such as [hmi1.sh](deployments/hmi1.sh), [hmi2.sh](deployments/hmi2.sh) or [attacker.sh](deployments/attacker.sh) which can attach user to the container.
+This command creates `results/packets.csv`, `results/modbus_analysis.csv`, and `results/summary.txt`.
 
-## Run in GNS3
-To run the ICSSIM and the sample Bottle Filling factory clone the prject and use the portable GNS3 file to create a new project in GNS3.
+---
 
-### Getting ICSSIM and the sample project
-Clone The probject into your local directory using following git command.
-```
-git clone https://github.com/AlirezaDehlaghi/ICSSIM ICSSIM
-```
+## File Descriptions
 
-### Import Project in GNS3
-Import the portable project ([deployments/GNS3/ICSSIM-GNS3-Portable.gns3project](deployments/GNS3/ICSSIM-GNS3-Portable.gns3project)) using menu **File->Import Portable Project**
+### packets.csv
 
-## RUN as a single Python project
+| Column | Description |
+|--------|-------------|
+| frame_no | Sequential frame/packet number from the capture |
+| timestamp | Capture time in ISO-8601 format |
+| src_ip / dst_ip | Source / Destination IP addresses |
+| src_port / dst_port | Source / Destination ports (blank for non-TCP/UDP packets) |
+| highest_protocol | Highest-level protocol identified by Wireshark (e.g. TCP, MODBUS, MDNS) |
+| length | Frame length in bytes |
+| payload_first25bytes_hex | Hex-encoded preview of the first 25 bytes |
 
-### Pre steps
-Make sure that you have already installed the following applications and tools. 
+### modbus_analysis.csv
 
-* git
-* Python
-* pip
+| Column | Description |
+|--------|-------------|
+| transaction_id | Modbus/TCP Transaction ID |
+| client_ip / server_ip | Addresses participating in the exchange |
+| func_code | Modbus function code |
+| unit_id | Target unit ID |
+| query_time | Timestamp of the request |
+| response_time | Timestamp of the matching response |
+| rtt_ms | Round-trip time in milliseconds |
 
-Make sure that you installed required packages: pyModbusTCP, memcache
-```
-pip install pyModbusTCP
-pip install memcache
+### summary.txt
 
-```
+Human-readable overview that currently includes:
 
+* Total packet count
+* Protocol distribution (how many packets of each protocol)
+* Modbus statistics (request count & average RTT)
 
-### Getting ICSSIM and the sample project
-Clone The probject into your local directory using following git command.
-```
-git clone https://github.com/AlirezaDehlaghi/ICSSIM ICSSIM
-```
+---
 
-check the file [Configs.py](src/Configs.py) and make sure that EXECUTION_MODE varibale is set to EXECUTION_MODE_DOCKER as follow:
-```
-EXECUTION_MODE = EXECUTION_MODE_LOCAL
-```
+## Customisation Tips
 
-### Running the sample project 
-Run the sample project using the running start.py
-```
-cd ICSSIM/src
-python3 start.py
-```
+* **Additional Fields** – Edit `pcap_to_csv.py` to add more columns from any Wireshark-recognised protocol layer.
+* **Different Protocols** – The same pattern used for Modbus can be extended to other request/response protocols (DNS, HTTP, etc.).
+
+---
+
+## Troubleshooting
+
+* **`OSError: tshark not found`** – Ensure Wireshark/TShark is installed and its directory is added to the `PATH` environment variable.
+* **Permissions** – On Windows, you may need to run the command prompt or PowerShell as Administrator if the pcap file is in a protected directory.
+
+---
+
+© 2024  
